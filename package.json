@@ -12,7 +12,8 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:deploy": "prisma migrate deploy",
-    "prisma:studio": "prisma studio"
+    "prisma:studio": "prisma studio",
+    "prisma:seed": "prisma db seed"
   },
   "dependencies": {
     "@prisma/client": "^6.4.1",
@@ -28,5 +29,8 @@
   },
   "engines": {
     "node": ">=20"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
   }
 }

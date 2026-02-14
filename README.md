@@ -38,6 +38,7 @@ npm install
 ```bash
 npm run prisma:generate
 npm run prisma:migrate -- --name init
+npm run prisma:seed
 ```
 
 4. Run dev server
@@ -58,6 +59,20 @@ Expected response:
 {"ok":true}
 ```
 
+Login:
+
+```bash
+curl -X POST http://localhost:3000/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"user@example.com","inviteCode":"WOODPECKER-1"}'
+```
+
+Get current user:
+
+```bash
+curl http://localhost:3000/me -H "Authorization: Bearer <token>"
+```
+
 ## Scripts
 - `npm run dev` - start Fastify in watch mode
 - `npm run build` - compile TypeScript to `dist`
@@ -66,9 +81,10 @@ Expected response:
 - `npm run prisma:migrate` - create/apply development migration
 - `npm run prisma:deploy` - apply migrations in non-dev environments
 - `npm run prisma:studio` - open Prisma Studio
+- `npm run prisma:seed` - seed invite codes (`WOODPECKER-1` to `WOODPECKER-5`)
 
 ## Prisma Notes
-Schema lives in `prisma/schema.prisma` and includes a simple `User` model.
+Schema lives in `prisma/schema.prisma` and includes `User` + `InviteCode` models.
 
 For production deployment migrations:
 
