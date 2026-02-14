@@ -15,7 +15,8 @@ const envSchema = z.object({
   DATABASE_URL: z.string().url(),
   PORT: z.coerce.number().int().positive().default(3000),
   JWT_SECRET: z.string().min(1),
-  INVITE_CODE_REQUIRED: parseBoolean.default(true)
+  INVITE_CODE_REQUIRED: parseBoolean.default(true),
+  AUTH_DISABLED: parseBoolean.default(false)
 });
 
 export const env = envSchema.parse(process.env);
