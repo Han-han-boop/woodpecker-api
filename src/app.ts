@@ -2,7 +2,9 @@ import Fastify from "fastify";
 import { healthRoutes } from "./routes/health";
 import { authPlugin } from "./plugins/auth";
 import { authRoutes } from "./routes/auth";
+import { blockRoutes } from "./routes/blocks";
 import { meRoutes } from "./routes/me";
+import { runRoutes } from "./routes/runs";
 import { fail } from "./lib/response";
 
 export function buildServer() {
@@ -12,6 +14,8 @@ export function buildServer() {
   app.register(healthRoutes);
   app.register(authRoutes);
   app.register(meRoutes);
+  app.register(blockRoutes);
+  app.register(runRoutes);
 
   app.setErrorHandler((error, _request, reply) => {
     app.log.error(error);

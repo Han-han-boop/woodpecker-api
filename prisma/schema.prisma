@@ -15,6 +15,7 @@ enum InviteCodeStatus {
 model User {
   id        String   @id @default(uuid())
   email     String   @unique
+  blocks    Block[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -28,4 +29,48 @@ model InviteCode {
   expiresAt DateTime?
   createdAt DateTime         @default(now())
   updatedAt DateTime         @updatedAt
+}
+
+model Block {
+  id            String            @id @default(cuid())
+  ownerId       String
+  owner         User              @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  name          String
+  symbol        String
+  sessionCount  Int               @default(100)
+  templates     SessionTemplate[]
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+}
+
+model SessionTemplate {
+  id            String       @id
+  blockId       String
+  block         Block        @relation(fields: [blockId], references: [id], onDelete: Cascade)
+  sessionNumber Int
+  date          String?
+  sessionType   String       @default("custom")
+  m1Url         String?
+  m15Url        String?
+  h4Url         String?
+  runs          SessionRun[]
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  @@unique([blockId, sessionNumber])
+}
+
+model SessionRun {
+  id         String          @id
+  templateId String
+  template   SessionTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  runIndex   Int
+  startedAt  DateTime
+  endedAt    DateTime?
+  result     String?
+  sumR       Float?
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+
+  @@unique([templateId, runIndex])
 }
