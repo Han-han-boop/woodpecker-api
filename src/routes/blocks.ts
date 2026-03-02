@@ -16,7 +16,13 @@ const createBlockBodySchema = z.object({
 const generateTemplatesBodySchema = z.object({
   sessionType: z.string().trim().min(1).optional(),
   startDate: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-  useGitHubUrls: z.boolean().optional()
+  useGitHubUrls: z.boolean().optional(),
+  dataMode: z.enum(["github_real"]).optional(),
+  symbol: z.string().trim().min(1).optional()
+});
+
+const nextQuerySchema = z.object({
+  mode: z.enum(["unseen", "least_runs", "oldest"]).default("unseen")
 });
 
 const db = prisma as any;
@@ -111,7 +117,77 @@ export async function blockRoutes(app: FastifyInstance): Promise<void> {
 
     const sessionType = parsedBody.data.sessionType ?? "custom";
     const useGitHubUrls = parsedBody.data.useGitHubUrls ?? false;
+    const dataMode = parsedBody.data.dataMode ?? null;
 
+    const GITHUB_RAW = "https://raw.githubusercontent.com/Han-han-boop/woodpecker-data/main";
+
+    if (dataMode === "github_real") {
+      const symbol = parsedBody.data.symbol ?? block.symbol;
+      const catalogRows = await db.sessionCatalog.findMany({
+        where: { symbol, state: 1 },
+        orderBy: { serie: "asc" }
+      });
+
+      if (catalogRows.length < block.sessionCount) {
+        const response = fail(
+          "CATALOG_NOT_ENOUGH_ROWS",
+          `Need ${block.sessionCount} active catalog rows for "${symbol}", found ${catalogRows.length}`,
+          400
+        );
+        return reply.status(response.statusCode).send(response.body);
+      }
+
+      let created = 0;
+      let skipped = 0;
+
+      await prisma.$transaction(async (tx) => {
+        const trx = tx as any;
+        for (let i = 0; i < block.sessionCount; i += 1) {
+          const sessionNumber = i + 1;
+          const catalog = catalogRows[i];
+          const padded = String(sessionNumber).padStart(3, "0");
+          const templateId = `tpl_${block.id}_${padded}`;
+          const date = catalog.sessionDate;
+          const serie = catalog.serie;
+
+          const m1Url = `${GITHUB_RAW}/${symbol}/${serie}/m1/${date}_m1.csv`;
+          const m15Url = `${GITHUB_RAW}/${symbol}/${serie}/m15/${date}_m15.csv`;
+          const h4Url1 = `${GITHUB_RAW}/${symbol}/h4/H4_1.csv`;
+          const h4Url2 = `${GITHUB_RAW}/${symbol}/h4/H4_2.csv`;
+          const h4Url3 = `${GITHUB_RAW}/${symbol}/h4/H4_3.csv`;
+
+          const existing = await trx.sessionTemplate.findUnique({
+            where: { blockId_sessionNumber: { blockId: block.id, sessionNumber } }
+          });
+
+          if (existing) {
+            await trx.sessionTemplate.update({
+              where: { blockId_sessionNumber: { blockId: block.id, sessionNumber } },
+              data: { id: templateId, date, sessionType, serie, m1Url, m15Url, h4Url1, h4Url2, h4Url3 }
+            });
+            skipped += 1;
+          } else {
+            await trx.sessionTemplate.create({
+              data: { id: templateId, blockId: block.id, sessionNumber, date, sessionType, serie, m1Url, m15Url, h4Url1, h4Url2, h4Url3 }
+            });
+            created += 1;
+          }
+        }
+      });
+
+      return reply.send(
+        ok({
+          blockId: block.id,
+          dataMode: "github_real",
+          symbol,
+          sessionType,
+          created,
+          skipped
+        })
+      );
+    }
+
+    // Legacy mode (existing behavior)
     await prisma.$transaction(async (tx) => {
       const trx = tx as any;
       for (let sessionNumber = 1; sessionNumber <= block.sessionCount; sessionNumber += 1) {
@@ -198,5 +274,117 @@ export async function blockRoutes(app: FastifyInstance): Promise<void> {
     });
 
     return reply.send(ok({ templates }));
+  });
+
+  app.get("/blocks/:blockId/next", { preHandler: app.authenticate }, async (request, reply) => {
+    if (!request.user) {
+      const response = fail("UNAUTHORIZED", "Invalid token", 401);
+      return reply.status(response.statusCode).send(response.body);
+    }
+
+    const parsedParams = blockParamsSchema.safeParse(request.params);
+    if (!parsedParams.success) {
+      const response = fail("BAD_REQUEST", "Invalid blockId", 400);
+      return reply.status(response.statusCode).send(response.body);
+    }
+
+    const parsedQuery = nextQuerySchema.safeParse(request.query);
+    if (!parsedQuery.success) {
+      const response = fail("BAD_REQUEST", "Invalid query: mode must be unseen, least_runs, or oldest", 400);
+      return reply.status(response.statusCode).send(response.body);
+    }
+
+    const block = await db.block.findFirst({
+      where: {
+        id: parsedParams.data.blockId,
+        ownerId: request.user.id
+      },
+      select: { id: true }
+    });
+
+    if (!block) {
+      const response = fail("BLOCK_NOT_FOUND", "Block not found", 404);
+      return reply.status(response.statusCode).send(response.body);
+    }
+
+    const templates = await db.sessionTemplate.findMany({
+      where: { blockId: block.id },
+      include: {
+        _count: { select: { runs: true } },
+        runs: {
+          orderBy: { startedAt: "desc" as const },
+          take: 1,
+          select: { startedAt: true, result: true }
+        }
+      },
+      orderBy: { sessionNumber: "asc" }
+    });
+
+    if (templates.length === 0) {
+      const response = fail("NO_TEMPLATES", "No templates found for this block", 404);
+      return reply.status(response.statusCode).send(response.body);
+    }
+
+    const mode = parsedQuery.data.mode;
+    let selected: (typeof templates)[number] | null = null;
+
+    if (mode === "unseen") {
+      selected = templates.find((t: any) => t._count.runs === 0) ?? null;
+    } else if (mode === "least_runs") {
+      let minRuns = Infinity;
+      for (const t of templates) {
+        const count = (t as any)._count.runs;
+        if (count < minRuns) {
+          minRuns = count;
+          selected = t;
+        }
+      }
+    } else {
+      // oldest: smallest lastRunAt; null (never run) has highest priority
+      let pick: (typeof templates)[number] | null = null;
+      let pickTime: Date | null = null; // null = never run = best
+
+      for (const t of templates) {
+        const lastRun = (t as any).runs[0] ?? null;
+        if (!lastRun) {
+          // never run — highest priority, pick first by sessionNumber
+          if (pickTime !== null || !pick) {
+            pick = t;
+            pickTime = null;
+          }
+          continue;
+        }
+        const runTime = new Date(lastRun.startedAt);
+        if (pickTime === null && pick) continue; // already have a never-run
+        if (pickTime === null || runTime < pickTime) {
+          pick = t;
+          pickTime = runTime;
+        }
+      }
+      selected = pick;
+    }
+
+    if (!selected) {
+      const response = fail("NO_NEXT_SESSION", "All sessions have been seen", 404);
+      return reply.status(response.statusCode).send(response.body);
+    }
+
+    const lastRun = (selected as any).runs[0] ?? null;
+    const runsCount = (selected as any)._count.runs;
+
+    // Strip _count and runs from the template response
+    const { _count, runs, ...template } = selected as any;
+
+    return reply.send(
+      ok({
+        template,
+        runStats: {
+          runsCount,
+          lastRunAt: lastRun?.startedAt ?? null,
+          lastResult: lastRun?.result ?? null
+        },
+        reason: mode
+      })
+    );
   });
 }

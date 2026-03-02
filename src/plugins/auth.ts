@@ -1,6 +1,7 @@
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
-import { createHmac } from "node:crypto";
+import fp from "fastify-plugin";
 import { env } from "../env";
+import { prisma } from "../lib/prisma";
 import { verifyJwt } from "../lib/jwt";
 import { fail } from "../lib/response";
 
@@ -24,37 +25,26 @@ function readBearerToken(req: FastifyRequest): string | null {
 
 async function authenticate(req: FastifyRequest, reply: FastifyReply): Promise<void> {
   if (env.AUTH_DISABLED) {
+    const devUser = await prisma.user.upsert({
+      where: { email: "dev@local" },
+      update: {},
+      create: { email: "dev@local" },
+      select: { id: true, email: true }
+    });
+
     req.user = {
-      id: "dev-user",
-      email: "dev@local"
+      id: devUser.id,
+      email: devUser.email
     };
     return;
   }
 
-  req.log.info({ authHeader: req.headers.authorization }, "AUTH header received");
   const token = readBearerToken(req);
-  req.log.info({ tokenLen: token?.length, tokenStart: token?.slice(0, 16) }, "JWT token extracted");
 
   if (!token) {
     const response = fail("UNAUTHORIZED", "Missing or invalid Authorization header", 401);
     return reply.status(response.statusCode).send(response.body);
   }
-
-  const parts = token.split(".");
-  const providedSignature = parts[2];
-  const expectedSignature =
-    parts.length === 3 ? createHmac("sha256", env.JWT_SECRET).update(`${parts[0]}.${parts[1]}`).digest("base64url") : null;
-  req.log.info(
-    {
-      tokenPartCount: parts.length,
-      headerLen: parts[0]?.length,
-      payloadLen: parts[1]?.length,
-      providedSigLen: providedSignature?.length,
-      expectedSigLen: expectedSignature?.length,
-      sigMatch: expectedSignature ? expectedSignature === providedSignature : false
-    },
-    "JWT verification pre-check"
-  );
 
   const payload = verifyJwt(token, env.JWT_SECRET);
   if (!payload) {
@@ -68,9 +58,9 @@ async function authenticate(req: FastifyRequest, reply: FastifyReply): Promise<v
   };
 }
 
-export const authPlugin: FastifyPluginAsync = async (app) => {
+export const authPlugin = fp(async (app) => {
   app.decorateRequest("user", null);
   app.decorate("authenticate", authenticate);
-};
+});
 
 export type { AuthenticatedUser };

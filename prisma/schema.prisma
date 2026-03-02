@@ -43,6 +43,18 @@ model Block {
   updatedAt     DateTime          @updatedAt
 }
 
+model SessionCatalog {
+  id          String   @id @default(cuid())
+  symbol      String
+  serie       String
+  sessionDate String
+  state       Int      @default(1)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([symbol, serie])
+}
+
 model SessionTemplate {
   id            String       @id
   blockId       String
@@ -50,9 +62,13 @@ model SessionTemplate {
   sessionNumber Int
   date          String?
   sessionType   String       @default("custom")
+  serie         String?
   m1Url         String?
   m15Url        String?
   h4Url         String?
+  h4Url1        String?
+  h4Url2        String?
+  h4Url3        String?
   runs          SessionRun[]
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
@@ -61,16 +77,63 @@ model SessionTemplate {
 }
 
 model SessionRun {
-  id         String          @id
-  templateId String
-  template   SessionTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
-  runIndex   Int
-  startedAt  DateTime
-  endedAt    DateTime?
-  result     String?
-  sumR       Float?
-  createdAt  DateTime        @default(now())
-  updatedAt  DateTime        @updatedAt
+  id           String        @id
+  templateId   String
+  template     SessionTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  runIndex     Int
+  startedAt    DateTime
+  endedAt      DateTime?
+  result       String?
+  sumR         Float?
+  trades         Trade[]
+  journalEntries JournalEntry[]
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
 
   @@unique([templateId, runIndex])
+}
+
+model Trade {
+  id         String     @id @default(cuid())
+  runId      String
+  run        SessionRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  direction  String
+  entryTsUtc DateTime
+  entryPrice Float
+  slPrice    Float?
+  tpPrice    Float?
+  notes      String?
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  @@index([runId])
+}
+
+model JournalEntry {
+  id         String       @id @default(cuid())
+  runId      String
+  run        SessionRun   @relation(fields: [runId], references: [id], onDelete: Cascade)
+  title      String?
+  notesMd    String?
+  reviewJson Json?
+  result     String?
+  sumR       Float?
+  discipline Int?
+  confidence Int?
+  tags       JournalTag[]
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+
+  @@index([runId])
+}
+
+model JournalTag {
+  id        String       @id @default(cuid())
+  entryId   String
+  entry     JournalEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  tag       String
+  createdAt DateTime     @default(now())
+
+  @@unique([entryId, tag])
+  @@index([entryId])
 }

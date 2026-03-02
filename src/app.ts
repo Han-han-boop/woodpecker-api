@@ -5,6 +5,9 @@ import { authRoutes } from "./routes/auth";
 import { blockRoutes } from "./routes/blocks";
 import { meRoutes } from "./routes/me";
 import { runRoutes } from "./routes/runs";
+import { tradeRoutes } from "./routes/trades";
+import { journalRoutes } from "./routes/journal";
+import { sessionCatalogRoutes } from "./routes/session-catalog";
 import { fail } from "./lib/response";
 
 export function buildServer() {
@@ -16,6 +19,9 @@ export function buildServer() {
   app.register(meRoutes);
   app.register(blockRoutes);
   app.register(runRoutes);
+  app.register(tradeRoutes);
+  app.register(journalRoutes);
+  app.register(sessionCatalogRoutes);
 
   app.setErrorHandler((error, _request, reply) => {
     app.log.error(error);

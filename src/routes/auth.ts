@@ -73,7 +73,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       throw error;
     }
 
-    const token = signJwt({ sub: user.id, email: user.email }, env.JWT_SECRET);
+    const token = signJwt({ sub: user.id, email: user.email }, env.JWT_SECRET, env.JWT_EXPIRES_IN_SECONDS);
 
     return reply.send(
       ok({

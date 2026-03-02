@@ -6,6 +6,7 @@ async function main() {
   await prisma.$connect();
 
   const app = buildServer();
+  app.log.info({ AUTH_DISABLED: env.AUTH_DISABLED, cwd: process.cwd() }, "Server startup env");
 
   app.addHook("onClose", async () => {
     await prisma.$disconnect();

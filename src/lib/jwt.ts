@@ -23,12 +23,26 @@ function constantTimeStringMatch(a: string, b: string): boolean {
 export type JwtPayload = {
   sub: string;
   email: string;
+  iat: number;
+  exp: number;
 };
 
-export function signJwt(payload: JwtPayload, secret: string): string {
+export function signJwt(
+  payload: Pick<JwtPayload, "sub" | "email">,
+  secret: string,
+  expiresInSeconds = 86400
+): string {
+  const now = Math.floor(Date.now() / 1000);
+  const ttl = Number.isFinite(expiresInSeconds) && expiresInSeconds > 0 ? Math.floor(expiresInSeconds) : 86400;
+  const tokenPayload: JwtPayload = {
+    ...payload,
+    iat: now,
+    exp: now + ttl
+  };
+
   const header = { alg: "HS256", typ: "JWT" };
   const encodedHeader = toBase64Url(JSON.stringify(header));
-  const encodedPayload = toBase64Url(JSON.stringify(payload));
+  const encodedPayload = toBase64Url(JSON.stringify(tokenPayload));
   const signingInput = `${encodedHeader}.${encodedPayload}`;
   const signature = createHmac("sha256", secret).update(signingInput).digest("base64url");
 
@@ -54,11 +68,30 @@ export function verifyJwt(token: string, secret: string): JwtPayload | null {
     }
 
     const payload = JSON.parse(fromBase64Url(encodedPayload).toString("utf8")) as Partial<JwtPayload>;
-    if (typeof payload.sub !== "string" || typeof payload.email !== "string") {
+    const iat = payload.iat;
+    const exp = payload.exp;
+
+    if (
+      typeof payload.sub !== "string" ||
+      typeof payload.email !== "string" ||
+      typeof iat !== "number" ||
+      typeof exp !== "number" ||
+      !Number.isInteger(iat) ||
+      !Number.isInteger(exp)
+    ) {
       return null;
     }
 
-    return { sub: payload.sub, email: payload.email };
+    if (exp <= iat) {
+      return null;
+    }
+
+    const now = Math.floor(Date.now() / 1000);
+    if (exp < now) {
+      return null;
+    }
+
+    return { sub: payload.sub, email: payload.email, iat, exp };
   } catch {
     return null;
   }
