@@ -3,23 +3,29 @@ import { PrismaClient } from "@prisma/client";
 const prisma = new PrismaClient();
 
 async function main() {
-  const codes = Array.from({ length: 5 }, (_, index) => `WOODPECKER-${index + 1}`);
-
-  for (const code of codes) {
-    await prisma.inviteCode.upsert({
+  // Revoke old WOODPECKER-* codes
+  const oldCodes = Array.from({ length: 5 }, (_, i) => `WOODPECKER-${i + 1}`);
+  for (const code of oldCodes) {
+    await prisma.inviteCode.updateMany({
       where: { code },
-      update: {
-        status: "active"
-      },
-      create: {
-        code,
-        status: "active",
-        maxUses: 100
-      }
+      data: { status: "revoked" }
     });
   }
 
-  console.log(`Seeded ${codes.length} invite codes.`);
+  // Single invite code
+  await prisma.inviteCode.upsert({
+    where: { code: "Alexispayetontacos" },
+    update: {
+      status: "active"
+    },
+    create: {
+      code: "Alexispayetontacos",
+      status: "active",
+      maxUses: null
+    }
+  });
+
+  console.log("Seeded invite code: Alexispayetontacos (old codes revoked).");
 }
 
 main()
